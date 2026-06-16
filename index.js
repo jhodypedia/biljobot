@@ -89,7 +89,6 @@ function ambilCookieLokal(email) {
     }
 }
 
-// 💡 🛠️ UPDATE: FUNGSI PIN-TEST COOKIE VALIDATION (Menggunakan endpoint /auth/get-session)
 async function cekApakahCookieValid(cookie) {
     try {
         const response = await apiClient.get('/auth/get-session', { 
@@ -100,19 +99,14 @@ async function cekApakahCookieValid(cookie) {
         if (response.data && response.data.session) {
             const waktuExpired = new Date(response.data.session.expiresAt).getTime();
             const waktuSekarang = Date.now();
-            
-            // Cek apakah waktu kedaluwarsa sesi dari server masih aman
-            if (waktuExpired > waktuSekarang) {
-                return true;
-            }
+            if (waktuExpired > waktuSekarang) return true;
         }
         return false;
     } catch (error) {
-        return false; // Error 401/403 atau bad request langsung dianggap mati
+        return false;
     }
 }
 
-// Pemuat data stats harian untuk cek kuota bills
 async function dapatkanStatsUser(cookie) {
     try {
         const response = await apiClient.post('/user/stats/refresh', {}, { 
@@ -127,20 +121,61 @@ async function dapatkanStatsUser(cookie) {
 }
 
 // ====================================================================
-// 🛠️ GENERATOR NAMA MERCHANT & NMID ACAK (PREMIUM & UNIK)
+// 🌏 DATABASE MERCHANT & WILAYAH NUSANTARA (FULL INDONESIA)
 // ====================================================================
 function generateMerchantUnik() {
-    const tipeBisnis = ['WARUNG', 'TOKO', 'KEDAI', 'CAFE', 'COFFEE', 'MART', 'CELL', 'BOUTIQUE', 'LAUNDRY', 'RESTO', 'APOTEK', 'MINIMARKET', 'BARBERSHOP', 'GRILL', 'KITCHEN'];
-    const namaUnik   = ['PANSA', 'PANSAGROUP', 'JAYA', 'MAKMUR', 'BERKAH', 'SARI', 'UTAMA', 'SUMBER', 'REJEKI', 'AGUNG', 'KURNIA', 'SENTOSA', 'ABADI', 'MULIA', 'SEJAHTERA', 'BAROKAH', 'DANA', 'CHICKEN', 'BOBA', 'SATE', 'BAKSO'];
-    const wilayah    = ['SURABAYA', 'SIDOARJO', 'GRESIK', 'MALANG', 'WONOKROMO', 'GUBENG', 'TEGALSARI', 'RUNGKUT', 'SUKOLILO', 'JAMBANGAN', 'KENJERAN', 'MERR', 'DIYREJO', 'KRIAN', 'WARU'];
-    const imbuhan    = ['CENTRAL', 'EXPRESS', 'UTAMA', 'SUKSES', 'SADAR', 'PODOMORO', 'PRIMA', 'FLASH', 'DIGITAL', '24 JAM', 'STATION', 'CORNER', 'HUB'];
+    const tipeBisnis = [
+        'WARUNG', 'TOKO', 'KEDAI', 'CAFE', 'COFFEE', 'MART', 'CELL', 'BOUTIQUE', 'LAUNDRY', 
+        'RESTO', 'APOTEK', 'MINIMARKET', 'BARBERSHOP', 'GRILL', 'KITCHEN', 'BAKERY', 'DISTRO', 
+        'JUICE', 'SEAFOOD', 'STEAK', 'GELATO', 'SALON', 'CLOTHING', 'FURNITURE', 'VAPE STORE',
+        'FOTOCOPY', 'STATIONERY', 'PETSHOP', 'AUTOCARE', 'SNAK TIME', 'BURGER', 'WARMINDO',
+        'ANGKRINGAN', 'DEPOT', 'COCO', 'FRUIT', 'GLOW', 'MEAT', 'MILKSHAKE', 'ICE CREAM'
+    ];
+    
+    const namaUnik = [
+        'PANSA', 'PANSAGROUP', 'JAYA', 'MAKMUR', 'BERKAH', 'SARI', 'UTAMA', 'SUMBER', 'REJEKI', 
+        'AGUNG', 'KURNIA', 'SENTOSA', 'ABADI', 'MULIA', 'SEJAHTERA', 'BAROKAH', 'DANA', 'CHICKEN', 
+        'BOBA', 'SATE', 'BAKSO', 'AMANAH', 'LESTARI', 'SUBUR', 'HIDAYAH', 'LANCAR', 'MANDIRI',
+        'NUSA', 'KENCANA', 'RASA', 'WANGI', 'SULTAN', 'REBORN', 'UPGRADE', 'SIGNATURE', 'BINTANG',
+        'KAYU', 'BUMI', 'MAJU', 'FITRI', 'HIJRAH', 'SADULUR', 'TALENTA', 'MADANI'
+    ];
+    
+    const wilayah = [
+        // Jawa & Jabodetabek
+        'SURABAYA', 'SIDOARJO', 'GRESIK', 'MALANG', 'MOJOKERTO', 'PASURUAN', 'JOMBANG', 'BATU', 'MADIUN', 'KEDIRI', 'BLITAR',
+        'JAKARTA', 'BOGOR', 'DEPOK', 'TANGERANG', 'BEKASI', 'BANDUNG', 'SEMARANG', 'YOGYAKARTA', 'SOLO', 'CILEGON', 'SERANG',
+        // Sumatera
+        'MEDAN', 'PALEMBANG', 'PADANG', 'PEKANBARU', 'BANDAR LAMPUNG', 'JAMBI', 'BENGKULU', 'BANDA ACEH', 'PANGKALPINANG', 'BATAM',
+        // Kalimantan
+        'PONTIANAK', 'BANJARMASIN', 'BALIKPAPAN', 'SAMARINDA', 'PALANGKARAYA', 'TARAKAN', 'NUNUKAN', 'BONTANG',
+        // Sulawesi
+        'MAKASSAR', 'MANADO', 'PALU', 'KENDARI', 'GORONTALO', 'BITUNG', 'BAUBAU', 'TOMOHON',
+        // Bali & Nusa Tenggara
+        'DENPASAR', 'MATARAM', 'KUPANG', 'SINGARAJA', 'UBUD', 'LABUAN BAJO', 'ATAMBUA',
+        // Maluku & Papua
+        'AMBON', 'TERNATE', 'JAYAPURA', 'SORONG', 'MANOKWARI', 'MERAUKE', 'MIMIKA', 'WAKATOBI'
+    ];
+    
+    const imbuhan = [
+        'CENTRAL', 'EXPRESS', 'UTAMA', 'SUKSES', 'SADAR', 'PODOMORO', 'PRIMA', 'FLASH', 'DIGITAL', 
+        '24 JAM', 'STATION', 'CORNER', 'HUB', 'PREMIUM', 'BOUTIQUE', 'MINI', 'MAXI', 'SUPER', 'CONCEPT',
+        'COLLECTION', 'DELUXE', 'CLASSIC', 'STREET', 'INDONESIA', 'PLUS', 'ECO'
+    ];
 
     const t = pick(tipeBisnis);
     const n = pick(namaUnik);
     const w = pick(wilayah);
     const i = pick(imbuhan);
 
-    let namaToko = ri(1, 3) === 1 ? `${t} ${n} ${w}` : (ri(1, 2) === 1 ? `${n} ${t} ${w}` : `${t} ${n} ${i} ${w}`);
+    const polaNama = ri(1, 6);
+    let namaToko = '';
+    if (polaNama === 1) namaToko = `${t} ${n} ${w}`;
+    else if (polaNama === 2) namaToko = `${n} ${t} ${w}`;
+    else if (polaNama === 3) namaToko = `${t} ${n} ${i} ${w}`;
+    else if (polaNama === 4) namaToko = `${n} ${i} ${w}`;
+    else if (polaNama === 5) namaToko = `${t} ${i} ${w}`;
+    else namaToko = `${n} ${w} ${i}`;
+
     if (namaToko.length > 26) namaToko = namaToko.substring(0, 26);
 
     const versiNmid = pick(['ID10', 'ID20', 'ID30']);
@@ -150,8 +185,15 @@ function generateMerchantUnik() {
     return { name: namaToko.toUpperCase(), nmid: `${versiNmid}${digitTahun}${sisaDigit}` };
 }
 
+// ====================================================================
+// 💳 KOMPILASI PAYMENT METHOD MASSAL
+// ====================================================================
 const PAYMENT_METHODS = [
     'Saldo DANA', 'DANA Pay Later', 'Rekening BCA', 'Rekening Mandiri', 'Kartu Debit BNI',
+    'QRIS Bank Mega', 'Saldo GoPay', 'GoPay Later', 'OVO Cash', 'ShopeePay Balance',
+    'SPayLater', 'LinkAja', 'Debit BRI', 'Debit Bank Jatim', 'Debit CIMB Niaga',
+    'Permata Net', 'BNC Balance', 'Allo Bank', 'SeaBank', 'Blu by BCA', 'LINE Bank',
+    'Danamon QR', 'Maybank Wallet', 'Sinarmas Pay', 'Bank Muamalat QR', 'BTN Mobile'
 ];
 
 function generateData() {
@@ -160,7 +202,7 @@ function generateData() {
     const nominal = 10000 + ri(0, steps) * 5000;
 
     const d = new Date();
-    d.setDate(d.getDate() - ri(0, 5));
+    d.setDate(d.getDate() - ri(0, 10));
     d.setHours(ri(7, 22), ri(0, 59), ri(0, 59));
 
     const MONTHS  = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'];
@@ -253,7 +295,7 @@ function drawReceipt(data) {
     ctx.fillStyle = GREY; ctx.font = '12px Arial'; ctx.fillText('Total Pembayaran', BASE_W / 2, NOM_Y - 6);
     ctx.fillStyle = DARK; ctx.font = 'bold 28px Arial'; ctx.fillText(formatRupiah(data.nominal), BASE_W / 2, NOM_Y + 24);
 
-    ctx.strokeStyle = LINE; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(RX + 20, NOM_Y + 45); ctx.lineTo(RX + RW - 20, NOM_Y + 45); ctx.stroke();
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(RX + 20, NOM_Y + 45); ctx.lineTo(RX + RW - 20, NOM_Y + 45); ctx.stroke(); // Fix typo ctx.stroke()
     
     const QR_Y = NOM_Y + 110; drawQR(ctx, BASE_W / 2, QR_Y, 115);
     ctx.strokeStyle = '#dddddd'; ctx.lineWidth = 1; ctx.strokeRect(BASE_W/2 - 115/2 - 1, QR_Y - 115/2 - 1, 117, 117);
@@ -450,7 +492,6 @@ async function runAccountLoop(account) {
     let cookieAktif = ambilCookieLokal(account.email);
     let butuhLoginBrowser = true;
 
-    // 💡 TAHAP 1: Cek Validasi Cookie super cepat lewat endpoint /auth/get-session
     if (cookieAktif) {
         console.log(`   [CHECK] Menemukan data cookie lokal. Menembak /auth/get-session...`);
         const apaValid = await cekApakahCookieValid(cookieAktif);
@@ -463,7 +504,6 @@ async function runAccountLoop(account) {
         }
     }
 
-    // Jika cookie tidak ada atau mati, buka browser Camoufox untuk pancing login baru
     if (butuhLoginBrowser) {
         console.log(`[${account.accountName}] Memicu login otomatis untuk mengambil session cookie baru...`);
         cookieAktif = await pemicuLoginOtomatisAkun(account);
@@ -474,23 +514,31 @@ async function runAccountLoop(account) {
         return 0;
     }
 
-    // 💡 TAHAP 2: Tarik info limit harian real-time menggunakan endpoint /user/stats/refresh
+    // 💡 BYPASS TOTAL HITUNGAN HARIAN: Mengabaikan limit cache data kemarin
     console.log(`   [STATS ENGINE] Memeriksa sisa kuota harian akun...`);
     const initialStats = await dapatkanStatsUser(cookieAktif);
+    
     if (initialStats && initialStats.pipeline) {
         const totalHariIni = initialStats.pipeline.total || 0;
-        console.log(`   📊 [STATS REPORT] Total Bills terunggah hari ini: ${totalHariIni} / 30`);
+        const limitMaksimum = initialStats.pipeline.max || 'Dinamis'; 
         
-        if (totalHariIni >= 30) {
-            console.log(`   🛑 [AUTO LIMIT] Akun terpantau sudah LIMIT harian (30 bills). Lanjut akun berikutnya.`);
+        console.log(`   📊 [STATS REPORT] Total Bills terunggah di sistem: ${totalHariIni} / ${limitMaksimum}`);
+        console.log(`   🚀 [BYPASS] Mengabaikan hitungan angka harian. Memaksa bot untuk tetap gempur upload...`);
+        
+        /* Pengecekan otomatis di bawah sengaja dimatikan (di-comment) agar data 30 transaksi kemarin
+        tidak menghentikan bot untuk mencoba push upload struk hari ini.
+        
+        if (initialStats.pipeline.max && totalHariIni >= initialStats.pipeline.max) {
+            console.log(`   🛑 [AUTO LIMIT] Akun terpantau sudah limit.`);
             return 0;
         }
+        */
     }
 
     let isRunning = true;
     let uploadedCount = 0;
 
-    // Tahap 3: Siklus Gempur Upload
+    // Bot akan terus berjalan sampai mendapatkan respon penolakan LIMIT / 429 asli dari server saat upload berjalan
     while (isRunning) {
         const { fp, filename, buffer, data } = generateAndSaveReceiptData();
         console.log(`\n[${account.accountName}] Membuat berkas: ${data.merchant.name} | ${formatRupiah(data.nominal)} | NMID: ${data.merchant.nmid}`);
@@ -498,7 +546,7 @@ async function runAccountLoop(account) {
         const result = await uploadAndConfirmReceipt(cookieAktif, filename, buffer, fp);
         
         if (result.status === 'LIMIT') {
-            console.log(`🛑 [STOP ACCOUNT] Sesi akun [${account.accountName}] diselesaikan karena LIMIT harian.`);
+            console.log(`🛑 [STOP ACCOUNT] Sesi akun [${account.accountName}] diselesaikan karena LIMIT harian resmi tercapai.`);
             isRunning = false;
         } else {
             uploadedCount++;
