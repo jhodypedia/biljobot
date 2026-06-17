@@ -17,10 +17,10 @@ const COOKIE_OUTPUT_FILE = path.join(__dirname, 'cookie.json');
 // ============================================================
 // 🔑 CONFIGURATION TARGET & CAPTCHA BYPASS
 // ============================================================
-const PASSWORD_DEFAULT = "password";   
+const PASSWORD_DEFAULT = "Arsleg32";   
 const KODE_REFERRAL = "5F16B70F"; // Otomatis disematkan ke URL pancingan awal
 
-const CAPTCHA_API_KEY = "";
+const CAPTCHA_API_KEY = "37fb672f9df83ab4ddd8e26d079e0f95";
 const CAPTCHA_SERVICE = "2captcha";   // Pilih "2captcha" atau "anticaptcha"
 const SITE_KEY        = "0x4AAAAAADKR0bu1HvcUPYJ1";
 
