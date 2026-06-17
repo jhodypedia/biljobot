@@ -1,5 +1,5 @@
 const { chromium } = require('playwright');
-const TwoCaptcha = require('@2captcha/2captcha');
+const TwoCaptcha = require('2captcha');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -8,9 +8,9 @@ const LIST_EMAIL_FILE = path.join(__dirname, 'list.txt');
 const DAFTAR_AKUN_FILE = path.join(__dirname, 'daftar-akun.json');
 const COOKIE_OUTPUT_FILE = path.join(__dirname, 'cookie.json');
 
-const PASSWORD_DEFAULT = "Pasword";   
+const PASSWORD_DEFAULT = "Arsleg32";   
 const KODE_REFERRAL = "5F16B70F";      
-const TWOCAPTCHA_API_KEY = "MASUKKAN_API_KEY_2CAPTCHA_DISINI"; 
+const TWOCAPTCHA_API_KEY = "37fb672f9df83ab4ddd8e26d079e0f95"; 
 const SITE_KEY_TURNSTILE = "0x4AAAAAAA-YOUR-SITE-KEY"; 
 
 const solver = new TwoCaptcha.Solver(TWOCAPTCHA_API_KEY);
