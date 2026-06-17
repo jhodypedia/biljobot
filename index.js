@@ -18,7 +18,7 @@ const JEDA_UPLOAD_MS = 5000;
 // ============================================================
 // 🔑 CONFIGURATION CAPTCHA & ENDPOINT
 // ============================================================
-const CAPTCHA_API_KEY = "abe82177baf6934e43fb8752254940ff";
+const CAPTCHA_API_KEY = "";
 const CAPTCHA_SERVICE = "2captcha";   // Pilihan: "2captcha" atau "anticaptcha"
 const SITE_KEY        = "0x4AAAAAADKR0bu1HvcUPYJ1";
 const PAGE_URL        = "https://billsonchain.io/login";
