@@ -1,0 +1,11 @@
+CAPTCHA_API_KEY=
+CAPTCHA_SERVICE=2captcha
+SITE_KEY=0x4AAAAAADKR0bu1HvcUPYJ1
+PAGE_URL=https://billsonchain.io/login
+REGISTER_PAGE_URL=https://billsonchain.io/register?ref=5F16B70F
+REGISTER_API_URL=https://bocapi.billsonchain.io/api/auth/sign-up/email
+BASE_API_URL=https://bocapi.billsonchain.io/api
+PASSWORD_DEFAULT=
+JEDA_UPLOAD_MS=5000
+JEDA_REGISTER_MIN_MS=6000
+JEDA_REGISTER_MAX_MS=12000
