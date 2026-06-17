@@ -12,8 +12,8 @@ const JEDA_UPLOAD_MS = 5000;
 // ====================================================================
 // 🔑 KONFIGURASI 2CAPTCHA & TARGET
 // ====================================================================
-const API_KEY_2CAPTCHA = 'INPUT_API_KEY_2CAPTCHA_ANDA_DISINI'; 
-const SITE_KEY_TURNSTILE = '0x4AAAAAAAx38y7H-z_I3V-S'; // Sesuaikan jika sitekey billsonchain berubah
+const API_KEY_2CAPTCHA = '37fb672f9df83ab4ddd8e26d079e0f95'; 
+const SITE_KEY_TURNSTILE = '0x4AAAAAADKRObu1HvcUPYJ1'; // Sesuaikan jika sitekey billsonchain berubah
 const PAGE_URL_TURNSTILE = 'https://billsonchain.io/login';
 
 const apiClient = axios.create({
