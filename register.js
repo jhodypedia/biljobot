@@ -17,16 +17,20 @@ const COOKIE_OUTPUT_FILE = path.join(__dirname, 'cookie.json');
 // ============================================================
 // 🔑 CONFIGURATION TARGET & CAPTCHA BYPASS
 // ============================================================
-const PASSWORD_DEFAULT = "Arsleg32";   
+const PASSWORD_DEFAULT = "";   
 const KODE_REFERRAL = "5F16B70F"; // Otomatis disematkan ke URL pancingan awal
 
-const CAPTCHA_API_KEY = "37fb672f9df83ab4ddd8e26d079e0f95";
+const CAPTCHA_API_KEY = "";
 const CAPTCHA_SERVICE = "2captcha";   // Pilih "2captcha" atau "anticaptcha"
 const SITE_KEY        = "0x4AAAAAADKR0bu1HvcUPYJ1";
 
 // Menyisipkan kode referral ke URL halaman utama agar terekam oleh session cookie Better Auth
 const PAGE_URL        = `https://billsonchain.io/register?ref=${KODE_REFERRAL}`;
 const REGISTER_URL    = "https://bocapi.billsonchain.io/api/auth/sign-up/email";
+
+// ⏳ KONFIGURASI JEDA AMAN (Milidetik)
+const JEDA_MINIMAL_MS = 6000;  // Minimal 6 detik antar akun
+const JEDA_MAKSIMAL_MS = 12000; // Maksimal 12 detik antar akun
 // ============================================================
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -98,13 +102,7 @@ function simpanDataKeJsonRealtime(filePath, dataBaru, keyUnique = 'email') {
 // ====================================================================
 async function solveTurnstile2Captcha() {
     const submitUrl = "https://2captcha.com/in.php";
-    const payload = {
-        key: CAPTCHA_API_KEY,
-        method: "turnstile",
-        sitekey: SITE_KEY,
-        pageurl: PAGE_URL,
-        json: 1,
-    };
+    const payload = { key: CAPTCHA_API_KEY, method: "turnstile", sitekey: SITE_KEY, pageurl: PAGE_URL, json: 1 };
 
     try {
         const submitResp = await axios.post(submitUrl, new URLSearchParams(payload).toString(), { timeout: 30000 });
@@ -163,6 +161,10 @@ async function dapatkanTokenCaptcha() {
 // 🚀 API-BASED REGISTER ENGINE (MURNI HTTP INJECTION - NO BROWSER)
 // ====================================================================
 async function prosesPendaftaranApi(nama, email, label) {
+    // 💡 JEDA MANUSIA: Beri jeda kecil acak sebelum meminta token untuk memalsukan proses berpikir/loading form
+    const preDelay = 1500 + Math.floor(Math.random() * 2000);
+    await sleep(preDelay);
+
     console.log(`   [API REGISTER] Memulai proses solver Turnstile Captcha...`);
     const { token: turnstileToken, error: captchaErr } = await dapatkanTokenCaptcha();
     
@@ -178,7 +180,7 @@ async function prosesPendaftaranApi(nama, email, label) {
     client.defaults.headers.common = {
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
         'accept': 'application/json, text/plain, */*',
-        'accept-language': 'en-US,en;q=0.9',
+        'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
         'origin': 'https://billsonchain.io',
         'referer': 'https://billsonchain.io/register'
     };
@@ -232,7 +234,8 @@ async function prosesPendaftaranApi(nama, email, label) {
                 accountName: label,
                 fullName: nama,
                 email: email,
-                password: PASSWORD_DEFAULT
+                password: PASSWORD_DEFAULT,
+                verified: false 
             };
             simpanDataKeJsonRealtime(DAFTAR_AKUN_FILE, dataAkunFix, 'email');
 
@@ -306,7 +309,7 @@ async function jalankanPendaftarMassal() {
         const result = await prosesPendaftaranApi(namaAcak, emailDotTrick, namaLabel);
 
         if (result.success) {
-            console.log(`   ✅ [SUKSES] Akun berhasil terdaftar dan cookie berhasil diamankan!`);
+            console.log(`   ✅ [SUKSES] Akun berhasil terdaftar! Link verifikasi dikirim ke inbox Gmail utama.`);
             hitunganGlobal++;
             totalGagalBeruntun = 0; 
         } else {
@@ -317,14 +320,16 @@ async function jalankanPendaftarMassal() {
         indexPutaran++;
 
         if (hitunganGlobal < totalKapasitasMaksimal) {
-            const jedaAcak = 4000 + Math.floor(Math.random() * 3000); 
-            console.log(`\n⏳ Jeda ${(jedaAcak/1000).toFixed(1)} detik sebelum antrean berikutnya...\n`);
+            // 💡 JEDA ANTAR AKUN AKTIF: Mengkalkulasi jeda acak dinamis di antara batas minimal dan maksimal yang ditentukan
+            const jedaAcak = JEDA_MINIMAL_MS + Math.floor(Math.random() * (JEDA_MAKSIMAL_MS - JEDA_MINIMAL_MS)); 
+            console.log(`\n⏳ Memasang jeda aman selama ${(jedaAcak/1000).toFixed(1)} detik sebelum antrean berikutnya...\n`);
             await sleep(jedaAcak);
         }
     }
 
     console.log(`\n=============================================================`);
     console.log(`✨ [SELESAI TOTAL] Semua proses registrasi otomatis tuntas.`);
+    console.log(`💡 SILAKAN CEK INBOX GMAIL UTAMA ANDA UNTUK MELAKUKAN VERIFIKASI AKUN-AKUN DI ATAS.`);
     console.log(`=============================================================`);
 }
 
