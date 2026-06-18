@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { createCanvas } from 'canvas';
 import { wrapper } from 'axios-cookiejar-support';
 import { CookieJar } from 'tough-cookie';
-// import { HttpsProxyAgent } from 'https-proxy-agent';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import UserAgent from 'user-agents';
 import 'dotenv/config';
 
@@ -19,15 +19,14 @@ const COOKIE_FILE = path.join(__dirname, 'cookie.json');
 const OUTPUT_DIR = path.join(__dirname, 'struck');
 
 // Helper Proxy
-// const getProxyAgent = () => process.env.PROXY_URL ? new HttpsProxyAgent(process.env.PROXY_URL) : null;
+const getProxyAgent = () => process.env.PROXY_URL ? new HttpsProxyAgent(process.env.PROXY_URL) : null;
 
-// Axios Client Dinamis dengan Proteksi AbortSignal & Inject CookieJar
-const createApiClient = (cookie = null, customTimeout = 25000) => {
+// Axios Client Dinamis & Inject CookieJar (Tanpa AbortSignal yang menyebabkan Canceled)
+const createApiClient = (cookie = null, customTimeout = 30000) => {
     const jar = new CookieJar();
     const config = {
         baseURL: process.env.BASE_API_URL,
-        timeout: customTimeout,
-        signal: AbortSignal.timeout(customTimeout + 5000), // Proteksi hang di level TCP proxy
+        timeout: customTimeout, // Timeout bawaan Axios, mereset timer per request
         headers: {
             'user-agent': new UserAgent({ deviceCategory: 'desktop' }).toString(),
             'accept': '*/*',
@@ -209,7 +208,7 @@ async function pemicuLoginOtomatisAkun(akun) {
             // Ambil cookie langsung menggunakan library tough-cookie bawaan jar
             let cookieString = client.jar.getCookieStringSync('https://billsonchain.io');
             
-            // Fallback jika session_token terlewat (jarang terjadi jika client.jar diset dengan benar)
+            // Fallback jika session_token terlewat
             if (!cookieString || !cookieString.toLowerCase().includes('session_token')) {
                 const rawSetCookie = resp.headers['set-cookie'];
                 if (rawSetCookie) cookieString = rawSetCookie.map(c => c.split(';')[0]).join('; ');
@@ -368,18 +367,18 @@ async function uploadAndConfirmReceipt(client, filename, buffer, fp) {
         await axios.put(uploadUrl, buffer, { headers: { 'Content-Type': 'image/png' } });
         await fs.unlink(fp).catch(() => {});
         
-        // Error handling stream timeout/macet
         try {
             const streamResponse = await client.get(`/bill/${billId}/status/stream`, { responseType: 'stream', timeout: 10000 });
             if (streamResponse.data && typeof streamResponse.data.destroy === 'function') {
                 streamResponse.data.destroy();
             }
         } catch (streamErr) {
-            console.log(`[ID: ${billId}] Peringatan: Gagal memutus stream, melanjutkan ke konfirmasi...`);
+            // Abaikan error putus stream, lanjutkan ke /confirm
         }
         
         await client.post(`/bill/${billId}/confirm`, {});
         
+        // FASE POLLING KETAT: Memaksa script menunggu hasil akhir dari struk
         let attempts = 0;
         while (attempts < 25) {
             attempts++;
@@ -388,16 +387,25 @@ async function uploadAndConfirmReceipt(client, filename, buffer, fp) {
             if (statusResponse.data && statusResponse.data.ok) {
                 const currentStatus = statusResponse.data.data.status;
                 console.log(`[ID: ${billId}] [CHECK ${attempts}] Status: ${currentStatus}`);
+                
+                // HANYA jika status sudah pasti sukses, bot akan keluar dari loop ini dan maju
                 if (currentStatus === 'fraud_passed' || currentStatus === 'dedup_passed') return { status: 'SUCCESS' };
+                // HANYA jika status sudah pasti gagal, bot akan melapor
                 if (currentStatus === 'failed' || currentStatus === 'fraud_rejected' || statusResponse.data.data.failureReason) return { status: 'REJECTED' };
             }
         }
         return { status: 'TIMEOUT' };
     } catch (error) {
         await fs.unlink(fp).catch(() => {});
-        const httpStatus = error.response?.status;
+        const httpStatus = error.response?.status || 'N/A';
         const resDataString = error.response?.data ? JSON.stringify(error.response.data).toUpperCase() : '';
+        
+        // Cek apakah murni kena limit
         if (httpStatus === 429 || resDataString.includes('LIMIT')) return { status: 'LIMIT' };
+        
+        const errorMessage = error.code === 'ECONNABORTED' ? 'Timeout Koneksi' : error.message;
+        console.log(`[API ERROR] Gagal upload/cek struk: ${errorMessage} (HTTP ${httpStatus})`);
+        
         return { status: 'ERROR' };
     }
 }
@@ -430,20 +438,26 @@ async function runAccountLoop(account) {
         return 0;
     }
     
-    const initialStats = await dapatkanStatsUser(client);
+    await dapatkanStatsUser(client); 
     let isRunning = true; let uploadedCount = 0;
     
     while (isRunning) {
         const { fp, filename, buffer, data } = await generateAndSaveReceiptData();
         console.log(`[${account.accountName}] Mengunggah: ${data.merchant.name} | ${formatRupiah(data.nominal)}`);
         
+        // KODE INI AKAN MENAHAN LOOP SAMPAI STATUS STRUK SELESAI (SUKSES/GAGAL/LIMIT)
         const result = await uploadAndConfirmReceipt(client, filename, buffer, fp);
         
         if (result.status === 'LIMIT') {
             isRunning = false;
             console.log(`[${account.accountName}] Limit harian tercapai.`);
-        } else {
+        } else if (result.status === 'SUCCESS') {
             uploadedCount++;
+            console.log(`[${account.accountName}] ✅ Struk lolos verifikasi (Sukses).`);
+            const userDelay = parseInt(process.env.JEDA_UPLOAD_MS, 10) || 5000;
+            await randomDelay(userDelay, userDelay + 5000); 
+        } else {
+            console.log(`[${account.accountName}] ⚠️ Struk diabaikan (Status: ${result.status}). Jeda sejenak sebelum mencoba struk baru...`);
             const userDelay = parseInt(process.env.JEDA_UPLOAD_MS, 10) || 5000;
             await randomDelay(userDelay, userDelay + 5000); 
         }
