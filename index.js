@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url';
 import { createCanvas } from 'canvas';
 import { wrapper } from 'axios-cookiejar-support';
 import { CookieJar } from 'tough-cookie';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import UserAgent from 'user-agents';
 import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,19 +17,33 @@ const DAFTAR_AKUN_FILE = path.join(__dirname, 'daftar-akun.json');
 const COOKIE_FILE = path.join(__dirname, 'cookie.json');
 const OUTPUT_DIR = path.join(__dirname, 'struck');
 
-const apiClient = axios.create({
-    baseURL: process.env.BASE_API_URL,
-    timeout: 25000,
-    headers: {
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-        'accept': '*/*',
-        'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-        'origin': 'https://billsonchain.io',
-        'referer': 'https://billsonchain.io/'
-    }
-});
+// Helper untuk Proxy
+const getProxyAgent = () => process.env.PROXY_URL ? new HttpsProxyAgent(process.env.PROXY_URL) : null;
+
+// Axios Client Dinamis (Menggantikan apiClient statis)
+const createApiClient = (cookie = null, customTimeout = 25000) => {
+    const jar = new CookieJar();
+    const config = {
+        baseURL: process.env.BASE_API_URL,
+        timeout: customTimeout,
+        headers: {
+            'user-agent': new UserAgent({ deviceCategory: 'desktop' }).toString(),
+            'accept': '*/*',
+            'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+            'origin': 'https://billsonchain.io',
+            'referer': 'https://billsonchain.io/'
+        },
+        httpsAgent: getProxyAgent(),
+        httpAgent: getProxyAgent(),
+        jar,
+        withCredentials: true
+    };
+    if (cookie) config.headers['cookie'] = cookie;
+    return wrapper(axios.create(config));
+};
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const randomDelay = (min, max) => sleep(Math.floor(Math.random() * (max - min + 1) + min));
 let rng = Math.random;
 
 function mulberry32(seed) {
@@ -73,7 +89,8 @@ function simpanDataKeJsonRealtime(filePath, dataBaru, keyUnique = 'email') {
 
 async function cekApakahCookieValid(cookie) {
     try {
-        const response = await apiClient.get('/auth/get-session', { headers: { 'cookie': cookie }, timeout: 12000 });
+        const client = createApiClient(cookie, 12000);
+        const response = await client.get('/auth/get-session');
         if (response.data && response.data.session) {
             const waktuExpired = new Date(response.data.session.expiresAt).getTime();
             if (waktuExpired > Date.now()) return true;
@@ -84,7 +101,8 @@ async function cekApakahCookieValid(cookie) {
 
 async function dapatkanStatsUser(cookie) {
     try {
-        const response = await apiClient.post('/user/stats/refresh', {}, { headers: { 'cookie': cookie }, timeout: 15000 });
+        const client = createApiClient(cookie, 15000);
+        const response = await client.post('/user/stats/refresh', {});
         if (response.data && response.data.ok) return response.data.data;
         return null;
     } catch (error) { return null; }
@@ -136,31 +154,34 @@ async function pemicuLoginOtomatisAkun(akun) {
     if (captchaErr) {
         return null;
     }
-    const jar = new CookieJar();
-    const client = wrapper(axios.create({ jar, withCredentials: true }));
-    client.defaults.headers.common = {
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-        'accept': 'application/json, text/plain, */*',
-        'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-        'origin': 'https://billsonchain.io',
-        'referer': 'https://billsonchain.io/'
-    };
+    
+    const client = createApiClient(null, 20000);
+    client.defaults.headers.common['accept'] = 'application/json, text/plain, */*';
+    
     let csrfToken = "";
     try {
         await client.get(process.env.PAGE_URL, { timeout: 15000 });
-        const cookies = await jar.getCookies(process.env.PAGE_URL);
+        const cookies = await client.jar.getCookies(process.env.PAGE_URL);
         for (const cookie of cookies) {
             if (cookie.key.toLowerCase().includes("csrf")) { csrfToken = cookie.value; break; }
         }
     } catch (err) {}
+
     const loginUrl = `${process.env.BASE_API_URL}/auth/sign-in/email`;
     const dataPayload = { email: akun.email, password: akun.password, callbackURL: "https://billsonchain.io/dashboard" };
     const headersPayload = { "content-type": "application/json", "x-turnstile-token": turnstileToken };
     if (csrfToken) headersPayload["x-csrf-token"] = csrfToken;
+    
     try {
-        const resp = await client.post(loginUrl, dataPayload, { headers: headersPayload, timeout: 20000, maxRedirects: 0, validateStatus: () => true });
+        const resp = await client.post(loginUrl, dataPayload, { 
+            headers: headersPayload, 
+            timeout: 20000, 
+            maxRedirects: 5, 
+            validateStatus: () => true 
+        });
+        
         if (resp.status === 200 || resp.status === 201 || resp.status === 302) {
-            const currentCookies = await jar.getCookies('https://billsonchain.io');
+            const currentCookies = await client.jar.getCookies('https://billsonchain.io');
             let cookieString = currentCookies.map(c => `${c.key}=${c.value}`).join('; ');
             if (!cookieString || !cookieString.toLowerCase().includes('session_token')) {
                 const rawSetCookie = resp.headers['set-cookie'];
@@ -178,7 +199,7 @@ async function pemicuLoginOtomatisAkun(akun) {
 }
 
 const KOTA_JAWA_TIMUR = ["SURABAYA", "SIDOARJO", "GRESIK", "MALANG", "MOJOKERTO", "PASURUAN", "JOMBANG", "MADIUN", "KEDIRI", "BLITAR", "PROBOLINGGO", "TULUNGAGUNG", "NGANJUK", "LAMONGAN", "TUBAN", "BOJONEGORO", "NGAWI", "MAGETAN", "PONOROGO", "PACITAN", "TRENGGALEK", "LUMAJANG", "JEMBER", "BANYUWANGI"];
-const REKAYASA_STORE = ["Trijaya Toko Utama", "Maju Jaya Abadi", "Sumber Berkah Retail", "Pansa Corp Labs", "Sentosa Jaya Retail", "Nusantara Jaya Utama", "Sultan Berkah Mart", "Glow Central Minimarket", "Inti Berkah Food", "Sinar Utama Cell", "Delta Digital Cash", "Warung Berkah Utama", "Kedai Kita Bersama", "Barokah Abadi Mart", "Lancar Jaya Retail"];
+const REKAYASA_STORE = ["Trijaya", "Maju Jaya", "Berkah Retail", "Pansa Corp", "Sentosa Jaya ", "Nusantara Jaya", "Berkah Mart", "Glow Central", "Inti Food", "Utama Cell", "Delta Digital", "Warung Berkah", "Kedai Kita", "Abadi Mart", "Lancar Jaya"];
 const REKAYASA_ACQUIRER = ["Shopee", "DANA", "GOPAY", "OVO", "LinkAja", "BCA", "Mandiri", "BNI", "BRI"];
 
 function generateData() {
@@ -253,8 +274,8 @@ function drawReceipt(data) {
     const imgData = ctx.getImageData(0, 0, BASE_W * SCALE, BASE_H * SCALE);
     const dataPix = imgData.data;
     for (let i = 0; i < dataPix.length; i += 4) {
-        if (rng() > 0.90) {
-            const noise = ri(-6, 6);
+        if (rng() > 0.85) { 
+            const noise = ri(-8, 8);
             dataPix[i] = Math.min(255, Math.max(0, dataPix[i] + noise));
             dataPix[i+1] = Math.min(255, Math.max(0, dataPix[i+1] + noise));
             dataPix[i+2] = Math.min(255, Math.max(0, dataPix[i+2] + noise));
@@ -278,8 +299,9 @@ function generateAndSaveReceiptData() {
 }
 
 async function uploadAndConfirmReceipt(cookie, filename, buffer, fp) {
+    const client = createApiClient(cookie);
     try {
-        const initResponse = await apiClient.post('/bill/init', { filename, contentType: 'image/png', fileSizeBytes: buffer.length }, { headers: { 'cookie': cookie } });
+        const initResponse = await client.post('/bill/init', { filename, contentType: 'image/png', fileSizeBytes: buffer.length });
         if (!initResponse.data || !initResponse.data.ok) {
             if ((initResponse.data?.error?.code || '').includes('LIMIT')) {
                 if (fs.existsSync(fp)) fs.unlinkSync(fp);
@@ -288,16 +310,20 @@ async function uploadAndConfirmReceipt(cookie, filename, buffer, fp) {
             throw new Error('INIT_ERROR');
         }
         const { billId, uploadUrl = initResponse.data.data.uploadUrl } = initResponse.data.data;
+        
         await axios.put(uploadUrl, buffer, { headers: { 'Content-Type': 'image/png' } });
         if (fs.existsSync(fp)) fs.unlinkSync(fp);
-        const streamResponse = await apiClient.get(`/bill/${billId}/status/stream`, { headers: { 'cookie': cookie }, responseType: 'stream' });
+        
+        const streamResponse = await client.get(`/bill/${billId}/status/stream`, { responseType: 'stream' });
         if (streamResponse.data && typeof streamResponse.data.destroy === 'function') streamResponse.data.destroy();
-        await apiClient.post(`/bill/${billId}/confirm`, {}, { headers: { 'cookie': cookie } });
+        
+        await client.post(`/bill/${billId}/confirm`, {});
+        
         let attempts = 0;
         while (attempts < 25) {
             attempts++;
-            await sleep(2000);
-            const statusResponse = await apiClient.get(`/bill/${billId}/status`, { headers: { 'cookie': cookie } });
+            await randomDelay(3000, 6000); 
+            const statusResponse = await client.get(`/bill/${billId}/status`);
             if (statusResponse.data && statusResponse.data.ok) {
                 const currentStatus = statusResponse.data.data.status;
                 console.log(`[CHECK ${attempts}] Status: ${currentStatus}`);
@@ -337,15 +363,19 @@ async function runAccountLoop(account) {
     }
     const initialStats = await dapatkanStatsUser(cookieAktif);
     let isRunning = true; let uploadedCount = 0;
+    
     while (isRunning) {
         const { fp, filename, buffer, data } = generateAndSaveReceiptData();
         console.log(`[${account.accountName}] ${data.merchant.name} | ${formatRupiah(data.nominal)}`);
+        
         const result = await uploadAndConfirmReceipt(cookieAktif, filename, buffer, fp);
+        
         if (result.status === 'LIMIT') {
             isRunning = false;
         } else {
             uploadedCount++;
-            await sleep(parseInt(process.env.JEDA_UPLOAD_MS, 10));
+            const userDelay = parseInt(process.env.JEDA_UPLOAD_MS, 10) || 5000;
+            await randomDelay(userDelay, userDelay + 5000); 
         }
     }
     return uploadedCount;
@@ -366,6 +396,7 @@ async function main() {
         if (!account.email || account.email === 'email@gmail.com') continue;
         const totalUploaded = await runAccountLoop(account);
         console.log(`[${account.accountName}] Selesai memproses ${totalUploaded} struck.`);
+        await randomDelay(3000, 7000); 
     }
 }
 
