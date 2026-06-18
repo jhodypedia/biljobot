@@ -1,4 +1,5 @@
-import fs from 'fs';
+import fsSync from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -17,15 +18,16 @@ const DAFTAR_AKUN_FILE = path.join(__dirname, 'daftar-akun.json');
 const COOKIE_FILE = path.join(__dirname, 'cookie.json');
 const OUTPUT_DIR = path.join(__dirname, 'struck');
 
-// Helper untuk Proxy
+// Helper Proxy
 const getProxyAgent = () => process.env.PROXY_URL ? new HttpsProxyAgent(process.env.PROXY_URL) : null;
 
-// Axios Client Dinamis (Menggantikan apiClient statis)
+// Axios Client Dinamis dengan Proteksi AbortSignal & Inject CookieJar
 const createApiClient = (cookie = null, customTimeout = 25000) => {
     const jar = new CookieJar();
     const config = {
         baseURL: process.env.BASE_API_URL,
         timeout: customTimeout,
+        signal: AbortSignal.timeout(customTimeout + 5000), // Proteksi hang di level TCP proxy
         headers: {
             'user-agent': new UserAgent({ deviceCategory: 'desktop' }).toString(),
             'accept': '*/*',
@@ -39,7 +41,10 @@ const createApiClient = (cookie = null, customTimeout = 25000) => {
         withCredentials: true
     };
     if (cookie) config.headers['cookie'] = cookie;
-    return wrapper(axios.create(config));
+    
+    const client = wrapper(axios.create(config));
+    client.jar = jar; // Ekspos object jar agar bisa dibaca langsung setelah login
+    return client;
 };
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,57 +60,66 @@ function mulberry32(seed) {
     };
 }
 
-const pad  = (n, l = 2) => String(n).padStart(l, '0');
+const pad = (n, l = 2) => String(n).padStart(l, '0');
 const pick = arr => arr[Math.floor(rng() * arr.length)];
-const ri   = (min, max) => Math.floor(rng() * (max - min + 1)) + min;
+const ri = (min, max) => Math.floor(rng() * (max - min + 1)) + min;
 const formatRupiah = n => 'Rp' + n.toLocaleString('id-ID');
 
-function loadDaftarAkun() {
-    if (!fs.existsSync(DAFTAR_AKUN_FILE)) {
+async function loadDaftarAkun() {
+    try {
+        const data = await fs.readFile(DAFTAR_AKUN_FILE, 'utf-8');
+        return JSON.parse(data);
+    } catch (e) {
+        console.error(`[ERROR] Gagal memuat ${DAFTAR_AKUN_FILE}`);
         process.exit(1);
     }
-    return JSON.parse(fs.readFileSync(DAFTAR_AKUN_FILE, 'utf-8'));
 }
 
-function ambilCookieLokal(email) {
-    if (!fs.existsSync(COOKIE_FILE)) return null;
+async function ambilCookieLokal(email) {
     try {
-        const cookiesData = JSON.parse(fs.readFileSync(COOKIE_FILE, 'utf-8'));
+        const cookiesData = JSON.parse(await fs.readFile(COOKIE_FILE, 'utf-8'));
         const dataAkun = cookiesData.find(item => item.email === email);
         return dataAkun && dataAkun.cookie ? dataAkun.cookie : null;
-    } catch (e) { return null; }
+    } catch (e) {
+        return null;
+    }
 }
 
-function simpanDataKeJsonRealtime(filePath, dataBaru, keyUnique = 'email') {
+async function simpanDataKeJsonRealtime(filePath, dataBaru, keyUnique = 'email') {
     let listLama = [];
-    if (fs.existsSync(filePath)) {
-        try { listLama = JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch (e) { listLama = []; }
+    try {
+        const rawData = await fs.readFile(filePath, 'utf-8');
+        listLama = JSON.parse(rawData);
+    } catch (e) {
+        listLama = [];
     }
     const indexSama = listLama.findIndex(item => item[keyUnique] === dataBaru[keyUnique]);
     if (indexSama !== -1) listLama[indexSama] = dataBaru;
     else listLama.push(dataBaru);
-    fs.writeFileSync(filePath, JSON.stringify(listLama, null, 4));
+    
+    await fs.writeFile(filePath, JSON.stringify(listLama, null, 4));
 }
 
-async function cekApakahCookieValid(cookie) {
+async function cekApakahCookieValid(client) {
     try {
-        const client = createApiClient(cookie, 12000);
         const response = await client.get('/auth/get-session');
-        if (response.data && response.data.session) {
+        if (response.data?.session) {
             const waktuExpired = new Date(response.data.session.expiresAt).getTime();
             if (waktuExpired > Date.now()) return true;
         }
         return false;
-    } catch (error) { return false; }
+    } catch (error) { 
+        return false; 
+    }
 }
 
-async function dapatkanStatsUser(cookie) {
+async function dapatkanStatsUser(client) {
     try {
-        const client = createApiClient(cookie, 15000);
         const response = await client.post('/user/stats/refresh', {});
-        if (response.data && response.data.ok) return response.data.data;
-        return null;
-    } catch (error) { return null; }
+        return response.data?.ok ? response.data.data : null;
+    } catch (error) { 
+        return null; 
+    }
 }
 
 async function solveTurnstile2Captcha() {
@@ -116,6 +130,7 @@ async function solveTurnstile2Captcha() {
         if (submitResp.data.status !== 1) return { token: null, error: submitResp.data };
         const taskId = submitResp.data.request;
         const resultUrl = "https://2captcha.com/res.php";
+        
         for (let attempt = 0; attempt < 40; attempt++) {
             await sleep(2000);
             const resResp = await axios.get(resultUrl, { params: { key: process.env.CAPTCHA_API_KEY, action: "get", id: taskId, json: 1 }, timeout: 30000 });
@@ -134,6 +149,7 @@ async function solveTurnstileAntiCaptcha() {
         if (createResp.data.errorId !== 0) return { token: null, error: createResp.data };
         const taskId = createResp.data.taskId;
         const resultUrl = "https://api.anti-captcha.com/getTaskResult";
+        
         for (let attempt = 0; attempt < 40; attempt++) {
             await sleep(2000);
             const resResp = await axios.post(resultUrl, { clientKey: process.env.CAPTCHA_API_KEY, taskId: taskId }, { timeout: 30000 });
@@ -145,56 +161,87 @@ async function solveTurnstileAntiCaptcha() {
 }
 
 async function dapatkanTokenCaptcha() {
-    if (process.env.CAPTCHA_SERVICE === "anticaptcha") return await solveTurnstileAntiCaptcha();
-    return await solveTurnstile2Captcha();
+    return process.env.CAPTCHA_SERVICE === "anticaptcha" ? await solveTurnstileAntiCaptcha() : await solveTurnstile2Captcha();
 }
 
-async function pemicuLoginOtomatisAkun(akun) {
-    const { token: turnstileToken, error: captchaErr } = await dapatkanTokenCaptcha();
-    if (captchaErr) {
-        return null;
-    }
-    
-    const client = createApiClient(null, 20000);
-    client.defaults.headers.common['accept'] = 'application/json, text/plain, */*';
-    
-    let csrfToken = "";
-    try {
-        await client.get(process.env.PAGE_URL, { timeout: 15000 });
-        const cookies = await client.jar.getCookies(process.env.PAGE_URL);
-        for (const cookie of cookies) {
-            if (cookie.key.toLowerCase().includes("csrf")) { csrfToken = cookie.value; break; }
-        }
-    } catch (err) {}
+// Mutex antrean login
+let sedangProsesLogin = false;
 
-    const loginUrl = `${process.env.BASE_API_URL}/auth/sign-in/email`;
-    const dataPayload = { email: akun.email, password: akun.password, callbackURL: "https://billsonchain.io/dashboard" };
-    const headersPayload = { "content-type": "application/json", "x-turnstile-token": turnstileToken };
-    if (csrfToken) headersPayload["x-csrf-token"] = csrfToken;
-    
+async function pemicuLoginOtomatisAkun(akun) {
+    // SISTEM ANTREAN (MUTEX)
+    while (sedangProsesLogin) {
+        await sleep(2000); 
+    }
+    sedangProsesLogin = true; 
+
     try {
+        console.log(`[${akun.accountName}] Memulai login... Meminta token Turnstile (Captcha).`);
+        const { token: turnstileToken, error: captchaErr } = await dapatkanTokenCaptcha();
+        
+        if (captchaErr || !turnstileToken) {
+            console.log(`[${akun.accountName}] Gagal memecahkan Captcha:`, captchaErr || "Token kosong");
+            return null;
+        }
+        console.log(`[${akun.accountName}] Captcha selesai. Langsung menembak API Login...`);
+        
+        const client = createApiClient(null, 30000); 
+        
+        const loginUrl = `${process.env.BASE_API_URL}/auth/sign-in/email`;
+        const dataPayload = { 
+            email: akun.email, 
+            password: akun.password, 
+            callbackURL: "https://billsonchain.io/dashboard" 
+        };
+        const headersPayload = { 
+            "content-type": "application/json", 
+            "x-turnstile-token": turnstileToken,
+            "accept": "application/json, text/plain, */*"
+        };
+        
         const resp = await client.post(loginUrl, dataPayload, { 
             headers: headersPayload, 
-            timeout: 20000, 
+            timeout: 30000, 
             maxRedirects: 5, 
             validateStatus: () => true 
         });
         
-        if (resp.status === 200 || resp.status === 201 || resp.status === 302) {
-            const currentCookies = await client.jar.getCookies('https://billsonchain.io');
-            let cookieString = currentCookies.map(c => `${c.key}=${c.value}`).join('; ');
+        if ([200, 201, 302].includes(resp.status)) {
+            // Ambil cookie langsung menggunakan library tough-cookie bawaan jar
+            let cookieString = client.jar.getCookieStringSync('https://billsonchain.io');
+            
+            // Fallback jika session_token terlewat (jarang terjadi jika client.jar diset dengan benar)
             if (!cookieString || !cookieString.toLowerCase().includes('session_token')) {
                 const rawSetCookie = resp.headers['set-cookie'];
                 if (rawSetCookie) cookieString = rawSetCookie.map(c => c.split(';')[0]).join('; ');
             }
-            const dataCookieFix = { accountName: akun.accountName, fullName: akun.fullName || akun.accountName, email: akun.email, password: akun.password, cookie: cookieString, savedAt: new Date().toISOString() };
-            simpanDataKeJsonRealtime(COOKIE_FILE, dataCookieFix, 'email');
+            
+            const dataCookieFix = { 
+                accountName: akun.accountName, 
+                fullName: akun.fullName || akun.accountName, 
+                email: akun.email, 
+                password: akun.password, 
+                cookie: cookieString, 
+                savedAt: new Date().toISOString() 
+            };
+            
+            await simpanDataKeJsonRealtime(COOKIE_FILE, dataCookieFix, 'email');
+            console.log(`[${akun.accountName}] ✅ Login berhasil, sesi Cookie tersimpan.`);
             return cookieString;
-        } else {
-            return null;
         }
+        
+        console.log(`[${akun.accountName}] ❌ Login ditolak. Status: ${resp.status}`);
+        if (resp.data) {
+            console.log(`[${akun.accountName}] Alasan penolakan dari server:`, JSON.stringify(resp.data));
+        }
+        return null;
+
     } catch (e) { 
+        const errorMessage = e.code === 'ECONNABORTED' ? 'Koneksi Proxy/Server Timeout' : e.message;
+        console.log(`[${akun.accountName}] ❌ Request login terputus: ${errorMessage}`);
         return null; 
+    } finally {
+        // Buka kembali gerbang antrean login
+        sedangProsesLogin = false; 
     }
 }
 
@@ -206,12 +253,12 @@ function generateData() {
     const kota = pick(KOTA_JAWA_TIMUR);
     const namaToko = pick(REKAYASA_STORE);
     const acquirer = pick(REKAYASA_ACQUIRER);
-    const pecahanSkenario = pick([100, 200, 300, 400, 500, 600, 700, 800, 900]);
-    const nominalTeracak = ri(11, 240) * 1000 + pecahanSkenario;
+    const nominalTeracak = ri(11, 240) * 1000 + pick([100, 200, 300, 400, 500, 600, 700, 800, 900]);
     const d = new Date(); d.setDate(d.getDate() - ri(1, 6)); d.setHours(ri(7, 21), ri(0, 59), ri(0, 59));
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
     const dateStr = `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} • ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     const tsTag = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}`;
+    
     return {
         merchant: { name: namaToko.toUpperCase(), fullIdentity: `${namaToko} KAB. ${kota} ID`.toUpperCase(), location: `KAB. ${kota}, ${ri(61100, 69900)}, ID`, nmid: `ID1026${crypto.randomInt(10000000, 99999999)}` },
         acquirer, nominal: nominalTeracak, dateStr, 
@@ -228,49 +275,52 @@ function drawReceipt(data) {
     const SCALE = 2; const BASE_W = 420; const BASE_H = 880;
     const canvas = createCanvas(BASE_W * SCALE, BASE_H * SCALE); const ctx = canvas.getContext('2d');
     ctx.scale(SCALE, SCALE);
+    
     const angleJitter = (rng() * 0.36 - 0.18) * Math.PI / 180;
     ctx.translate(BASE_W / 2, BASE_H / 2);
-    const skewX = (rng() * 0.006 - 0.003);
-    const skewY = (rng() * 0.006 - 0.003);
-    ctx.transform(1, skewY, skewX, 1, 0, 0);
+    ctx.transform(1, (rng() * 0.006 - 0.003), (rng() * 0.006 - 0.003), 1, 0, 0);
     ctx.rotate(angleJitter);
     ctx.translate(-BASE_W / 2, -BASE_H / 2);
-    const jY = () => ri(-2, 2);
-    const jX = () => ri(-2, 2);
-    ctx.fillStyle = `rgb(${ri(10, 16)}, ${ri(136, 142)}, ${ri(231, 239)})`; 
-    ctx.fillRect(0, 0, BASE_W, BASE_H);
+    
+    const jY = () => ri(-2, 2); const jX = () => ri(-2, 2);
     const p = 16; const marginX = ri(-2, 2); const marginY = ri(-2, 2);
+    
+    ctx.fillStyle = `rgb(${ri(10, 16)}, ${ri(136, 142)}, ${ri(231, 239)})`; ctx.fillRect(0, 0, BASE_W, BASE_H);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(p + marginX, p + 40 + marginY, BASE_W - (p * 2), BASE_H - (p * 2) - 80);
+    
     ctx.fillStyle = '#000000'; ctx.textAlign = 'center'; ctx.font = `bold ${ri(36,39)}px Arial`; ctx.fillText("QRIS", BASE_W / 2 + jX(), 130 + jY());
     ctx.fillStyle = '#555555'; ctx.font = '14px Arial'; ctx.textAlign = 'left'; ctx.fillText(data.dateStr, p + 22 + marginX, 195 + jY());
     ctx.textAlign = 'right'; ctx.fillText("DANA ID 0821••••6061", BASE_W - p - 22 + marginX, 195 + jY());
+    
     ctx.strokeStyle = '#ebeeef'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(p + 20 + marginX, 225 + marginY); ctx.lineTo(BASE_W - p - 20 + marginX, 225 + marginY); ctx.stroke();
     ctx.fillStyle = '#01b169'; ctx.beginPath(); ctx.arc(p + 30 + marginX, 255 + jY(), 11, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#ffffff'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center'; ctx.fillText('✓', p + 30 + marginX, 259 + jY());
     ctx.fillStyle = '#333333'; ctx.font = 'bold 15px Arial'; ctx.textAlign = 'left'; ctx.fillText("Transaction success!", p + 52 + marginX, 260 + jY());
+    
     ctx.fillStyle = '#000000'; ctx.font = 'bold 17px Arial'; ctx.fillText(`Payment to ${data.merchant.name}`, p + 20 + marginX, 300 + jY());
     ctx.fillStyle = `rgb(${ri(232, 237)}, ${ri(243, 247)}, ${ri(251, 255)})`; ctx.fillRect(p + 20 + marginX, 335 + jY(), BASE_W - (p * 2) - 40, 55);
     ctx.fillStyle = '#000000'; ctx.font = 'bold 16px Arial'; ctx.fillText("Total Payment", p + 35 + marginX, 368 + jY());
     ctx.textAlign = 'right'; ctx.font = `bold ${ri(20,22)}px Arial`; ctx.fillText(formatRupiah(data.nominal), BASE_W - p - 35 + marginX, 368 + jY());
+    
     ctx.fillStyle = '#444444'; ctx.font = '15px Arial'; ctx.textAlign = 'left'; ctx.fillText("Payment Method", p + 20 + marginX, 425 + jY());
     ctx.textAlign = 'right'; ctx.fillStyle = '#000000'; ctx.fillText(data.payMethod, BASE_W - p - 20 + marginX, 425 + jY());
+    
     ctx.strokeStyle = '#dce1e5'; ctx.beginPath(); ctx.moveTo(p + 20 + marginX, 455 + marginY); ctx.lineTo(BASE_W - p - 20 + marginX, 455 + marginY); ctx.stroke();
     ctx.fillStyle = '#000000'; ctx.font = 'bold 17px Arial'; ctx.textAlign = 'left'; ctx.fillText("Transaction Detail", p + 20 + marginX, 495 + jY());
+    
     const line = (lbl, val, y) => {
         const offset = jY();
         ctx.fillStyle = '#444444'; ctx.font = '15px Arial'; ctx.textAlign = 'left'; ctx.fillText(lbl, p + 20 + jX() + marginX, y + offset);
         ctx.fillStyle = '#000000'; ctx.font = 'bold 15px Arial'; ctx.textAlign = 'right'; ctx.fillText(val, BASE_W - p - 20 + jX() + marginX, y + offset);
     };
-    line("Acquirer Name", data.acquirer, 535); 
-    line("Merchant Name", data.merchant.fullIdentity, 575); 
-    line("Merchant Location", data.merchant.location, 615); 
-    line("Merchant PAN", data.pan, 655); 
-    line("Terminal ID", data.terminalId, 695); 
-    line("CPAN", data.cpan, 735); 
-    line("RRN", data.rrn, 775);
+    line("Acquirer Name", data.acquirer, 535); line("Merchant Name", data.merchant.fullIdentity, 575); 
+    line("Merchant Location", data.merchant.location, 615); line("Merchant PAN", data.pan, 655); 
+    line("Terminal ID", data.terminalId, 695); line("CPAN", data.cpan, 735); line("RRN", data.rrn, 775);
+    
     ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#0f8beb'; ctx.lineWidth = 2;
     ctx.fillRect(p + 20 + marginX, BASE_H - 85 + marginY, BASE_W - (p * 2) - 40, 45); ctx.strokeRect(p + 20 + marginX, BASE_H - 85 + marginY, BASE_W - (p * 2) - 40, 45);
     ctx.fillStyle = '#0f8beb'; ctx.font = 'bold 15px Arial'; ctx.textAlign = 'center'; ctx.fillText("NEED SOME HELP?", BASE_W / 2 + jX(), BASE_H - 58 + jY());
+    
     const imgData = ctx.getImageData(0, 0, BASE_W * SCALE, BASE_H * SCALE);
     const dataPix = imgData.data;
     for (let i = 0; i < dataPix.length; i += 4) {
@@ -285,26 +335,30 @@ function drawReceipt(data) {
     return canvas;
 }
 
-function saveReceipt(canvas, uniqueId) {
-    if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    const filename = `receipt_${uniqueId}.png`; const fp = path.join(OUTPUT_DIR, filename);
-    fs.writeFileSync(fp, canvas.toBuffer('image/png'));
-    return { fp, filename, buffer: canvas.toBuffer('image/png') };
+async function saveReceipt(canvas, uniqueId) {
+    if (!fsSync.existsSync(OUTPUT_DIR)) {
+        await fs.mkdir(OUTPUT_DIR, { recursive: true });
+    }
+    const filename = `receipt_${uniqueId}.png`; 
+    const fp = path.join(OUTPUT_DIR, filename);
+    const buffer = canvas.toBuffer('image/png');
+    await fs.writeFile(fp, buffer);
+    return { fp, filename, buffer };
 }
 
-function generateAndSaveReceiptData() {
-    const data = generateData(); const canvas = drawReceipt(data);
-    const { fp, filename, buffer } = saveReceipt(canvas, data.fileUniqueTag);
+async function generateAndSaveReceiptData() {
+    const data = generateData(); 
+    const canvas = drawReceipt(data);
+    const { fp, filename, buffer } = await saveReceipt(canvas, data.fileUniqueTag);
     return { fp, filename, buffer, data };
 }
 
-async function uploadAndConfirmReceipt(cookie, filename, buffer, fp) {
-    const client = createApiClient(cookie);
+async function uploadAndConfirmReceipt(client, filename, buffer, fp) {
     try {
         const initResponse = await client.post('/bill/init', { filename, contentType: 'image/png', fileSizeBytes: buffer.length });
         if (!initResponse.data || !initResponse.data.ok) {
             if ((initResponse.data?.error?.code || '').includes('LIMIT')) {
-                if (fs.existsSync(fp)) fs.unlinkSync(fp);
+                await fs.unlink(fp).catch(() => {});
                 return { status: 'LIMIT' };
             }
             throw new Error('INIT_ERROR');
@@ -312,10 +366,17 @@ async function uploadAndConfirmReceipt(cookie, filename, buffer, fp) {
         const { billId, uploadUrl = initResponse.data.data.uploadUrl } = initResponse.data.data;
         
         await axios.put(uploadUrl, buffer, { headers: { 'Content-Type': 'image/png' } });
-        if (fs.existsSync(fp)) fs.unlinkSync(fp);
+        await fs.unlink(fp).catch(() => {});
         
-        const streamResponse = await client.get(`/bill/${billId}/status/stream`, { responseType: 'stream' });
-        if (streamResponse.data && typeof streamResponse.data.destroy === 'function') streamResponse.data.destroy();
+        // Error handling stream timeout/macet
+        try {
+            const streamResponse = await client.get(`/bill/${billId}/status/stream`, { responseType: 'stream', timeout: 10000 });
+            if (streamResponse.data && typeof streamResponse.data.destroy === 'function') {
+                streamResponse.data.destroy();
+            }
+        } catch (streamErr) {
+            console.log(`[ID: ${billId}] Peringatan: Gagal memutus stream, melanjutkan ke konfirmasi...`);
+        }
         
         await client.post(`/bill/${billId}/confirm`, {});
         
@@ -326,52 +387,61 @@ async function uploadAndConfirmReceipt(cookie, filename, buffer, fp) {
             const statusResponse = await client.get(`/bill/${billId}/status`);
             if (statusResponse.data && statusResponse.data.ok) {
                 const currentStatus = statusResponse.data.data.status;
-                console.log(`[CHECK ${attempts}] Status: ${currentStatus}`);
-                if (currentStatus === 'fraud_passed' || currentStatus === 'dedup_passed') {
-                    return { status: 'SUCCESS' };
-                } else if (currentStatus === 'failed' || currentStatus === 'fraud_rejected' || statusResponse.data.data.failureReason) {
-                    return { status: 'REJECTED' };
-                }
+                console.log(`[ID: ${billId}] [CHECK ${attempts}] Status: ${currentStatus}`);
+                if (currentStatus === 'fraud_passed' || currentStatus === 'dedup_passed') return { status: 'SUCCESS' };
+                if (currentStatus === 'failed' || currentStatus === 'fraud_rejected' || statusResponse.data.data.failureReason) return { status: 'REJECTED' };
             }
         }
         return { status: 'TIMEOUT' };
     } catch (error) {
-        if (fs.existsSync(fp)) fs.unlinkSync(fp);
+        await fs.unlink(fp).catch(() => {});
         const httpStatus = error.response?.status;
         const resDataString = error.response?.data ? JSON.stringify(error.response.data).toUpperCase() : '';
-        if (httpStatus === 429 || resDataString.includes('LIMIT')) {
-            return { status: 'LIMIT' };
-        }
+        if (httpStatus === 429 || resDataString.includes('LIMIT')) return { status: 'LIMIT' };
         return { status: 'ERROR' };
     }
 }
 
 async function runAccountLoop(account) {
-    let cookieAktif = ambilCookieLokal(account.email);
+    console.log(`[${account.accountName}] Memulai pengecekan sesi cookie...`);
+    let cookieAktif = await ambilCookieLokal(account.email);
+    let client = createApiClient(cookieAktif, 25000); 
+    
     let butuhLoginBrowser = true;
     if (cookieAktif) {
-        const apaValid = await cekApakahCookieValid(cookieAktif);
+        const apaValid = await cekApakahCookieValid(client);
         if (apaValid) {
+            console.log(`[${account.accountName}] Sesi valid. Langsung memproses struk.`);
             butuhLoginBrowser = false;
+        } else {
+            console.log(`[${account.accountName}] Sesi kedaluwarsa. Membutuhkan login ulang.`);
         }
+    } else {
+        console.log(`[${account.accountName}] Cookie tidak ditemukan. Membutuhkan login.`);
     }
+    
     if (butuhLoginBrowser) {
         cookieAktif = await pemicuLoginOtomatisAkun(account);
+        client = createApiClient(cookieAktif, 25000); 
     }
+    
     if (!cookieAktif) {
+        console.log(`[${account.accountName}] GAGAL MENDAPATKAN SESI. Melewati akun ini.`);
         return 0;
     }
-    const initialStats = await dapatkanStatsUser(cookieAktif);
+    
+    const initialStats = await dapatkanStatsUser(client);
     let isRunning = true; let uploadedCount = 0;
     
     while (isRunning) {
-        const { fp, filename, buffer, data } = generateAndSaveReceiptData();
-        console.log(`[${account.accountName}] ${data.merchant.name} | ${formatRupiah(data.nominal)}`);
+        const { fp, filename, buffer, data } = await generateAndSaveReceiptData();
+        console.log(`[${account.accountName}] Mengunggah: ${data.merchant.name} | ${formatRupiah(data.nominal)}`);
         
-        const result = await uploadAndConfirmReceipt(cookieAktif, filename, buffer, fp);
+        const result = await uploadAndConfirmReceipt(client, filename, buffer, fp);
         
         if (result.status === 'LIMIT') {
             isRunning = false;
+            console.log(`[${account.accountName}] Limit harian tercapai.`);
         } else {
             uploadedCount++;
             const userDelay = parseInt(process.env.JEDA_UPLOAD_MS, 10) || 5000;
@@ -383,20 +453,31 @@ async function runAccountLoop(account) {
 
 async function main() {
     console.log(`=============================================================`);
-    console.log(`🚀 WELCOME BOT - CREATED BY PANSSTR`);
+    console.log(`🚀 WELCOME BOT - PANSA GROUP LABS`);
     console.log(`=============================================================`);
-    const accounts = loadDaftarAkun();
+    
+    const accounts = await loadDaftarAkun();
+    const validAccounts = accounts.filter(acc => acc.email && acc.email !== 'email@gmail.com');
+    
     const args = process.argv.slice(2);
     if (args.includes('--seed')) {
         const index = args.indexOf('--seed');
         const seedVal = parseInt(args[index + 1], 10);
         if (!isNaN(seedVal)) { rng = mulberry32(seedVal); }
     }
-    for (const account of accounts) {
-        if (!account.email || account.email === 'email@gmail.com') continue;
-        const totalUploaded = await runAccountLoop(account);
-        console.log(`[${account.accountName}] Selesai memproses ${totalUploaded} struck.`);
-        await randomDelay(3000, 7000); 
+
+    // Eksekusi Paralel (Batching)
+    const BATCH_SIZE = 3; 
+    for (let i = 0; i < validAccounts.length; i += BATCH_SIZE) {
+        const batch = validAccounts.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(async (account) => {
+            const totalUploaded = await runAccountLoop(account);
+            console.log(`[${account.accountName}] Selesai memproses ${totalUploaded} struk.`);
+        }));
+        if (i + BATCH_SIZE < validAccounts.length) {
+            console.log(`Memasuki batch berikutnya...`);
+            await randomDelay(5000, 10000);
+        }
     }
 }
 
