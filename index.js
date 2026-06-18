@@ -199,7 +199,7 @@ async function pemicuLoginOtomatisAkun(akun) {
 }
 
 const KOTA_JAWA_TIMUR = ["SURABAYA", "SIDOARJO", "GRESIK", "MALANG", "MOJOKERTO", "PASURUAN", "JOMBANG", "MADIUN", "KEDIRI", "BLITAR", "PROBOLINGGO", "TULUNGAGUNG", "NGANJUK", "LAMONGAN", "TUBAN", "BOJONEGORO", "NGAWI", "MAGETAN", "PONOROGO", "PACITAN", "TRENGGALEK", "LUMAJANG", "JEMBER", "BANYUWANGI"];
-const REKAYASA_STORE = ["Trijaya", "Maju Jaya", "Berkah Retail", "Pansa Corp", "Sentosa Jaya ", "Nusantara Jaya", "Berkah Mart", "Glow Central", "Inti Food", "Utama Cell", "Delta Digital", "Warung Berkah", "Kedai Kita", "Abadi Mart", "Lancar Jaya"];
+const REKAYASA_STORE = ["Trijaya Toko Utama", "Maju Jaya Abadi", "Sumber Berkah Retail", "Pansa Corp Labs", "Sentosa Jaya Retail", "Nusantara Jaya Utama", "Sultan Berkah Mart", "Glow Central Minimarket", "Inti Berkah Food", "Sinar Utama Cell", "Delta Digital Cash", "Warung Berkah Utama", "Kedai Kita Bersama", "Barokah Abadi Mart", "Lancar Jaya Retail"];
 const REKAYASA_ACQUIRER = ["Shopee", "DANA", "GOPAY", "OVO", "LinkAja", "BCA", "Mandiri", "BNI", "BRI"];
 
 function generateData() {
