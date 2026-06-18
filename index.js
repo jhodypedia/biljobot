@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { createCanvas } from 'canvas';
 import { wrapper } from 'axios-cookiejar-support';
 import { CookieJar } from 'tough-cookie';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+// import { HttpsProxyAgent } from 'https-proxy-agent';
 import UserAgent from 'user-agents';
 import 'dotenv/config';
 
@@ -19,7 +19,7 @@ const COOKIE_FILE = path.join(__dirname, 'cookie.json');
 const OUTPUT_DIR = path.join(__dirname, 'struck');
 
 // Helper Proxy
-const getProxyAgent = () => process.env.PROXY_URL ? new HttpsProxyAgent(process.env.PROXY_URL) : null;
+// const getProxyAgent = () => process.env.PROXY_URL ? new HttpsProxyAgent(process.env.PROXY_URL) : null;
 
 // Axios Client Dinamis dengan Proteksi AbortSignal & Inject CookieJar
 const createApiClient = (cookie = null, customTimeout = 25000) => {
@@ -467,7 +467,7 @@ async function main() {
     }
 
     // Eksekusi Paralel (Batching)
-    const BATCH_SIZE = 3; 
+    const BATCH_SIZE = 1; 
     for (let i = 0; i < validAccounts.length; i += BATCH_SIZE) {
         const batch = validAccounts.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (account) => {
