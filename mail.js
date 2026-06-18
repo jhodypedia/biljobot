@@ -7,11 +7,12 @@ const CONFIG = {
   accounts: [
     {
       label: 'akun-1',
-      email: 'emailkamu1@gmail.com',
+      email: '@gmail.com',
       appPassword: 'xxxx xxxx xxxx xxxx',
     }
   ],
   targetSender: 'support@billsonchain.io',
+  targetSubjectPattern: /verify your email/i, // hanya proses email dengan subject ini
   mailbox: 'INBOX',
   allowedLinkDomains: ['billsonchain.io'],
   fetchTimeoutMs: 15000,
@@ -157,7 +158,12 @@ async function fetchVerificationLink(url, label) {
   }
 }
 
-async function handleNewMessage(client, uid, label) {
+async function handleNewMessage(client, uid, label, processedUids) {
+  const uidKey = `${label}:${uid}`;
+  if (processedUids.has(uidKey)) {
+    return;
+  }
+
   let message;
   try {
     message = await client.fetchOne(uid, { source: true, envelope: true }, { uid: true });
@@ -172,7 +178,17 @@ async function handleNewMessage(client, uid, label) {
     return;
   }
 
-  log(label, `Email baru dari ${fromAddr}, subject: "${message.envelope?.subject || ''}"`);
+  const subject = message.envelope?.subject || '';
+  if (CONFIG.targetSubjectPattern && !CONFIG.targetSubjectPattern.test(subject)) {
+    log(label, `Sender cocok tapi subject tidak relevan, skip: "${subject}"`);
+    return;
+  }
+
+  // Tandai sebagai sudah diproses SEBELUM fetch link, supaya event duplikat
+  // dari IMAP tidak memicu fetch kedua pada token yang sama (token sekali pakai).
+  processedUids.add(uidKey);
+
+  log(label, `Email target ditemukan dari ${fromAddr}, subject: "${subject}"`);
 
   const parsed = await simpleParser(message.source);
   const link = extractVerificationLink(parsed, { allowedDomains: CONFIG.allowedLinkDomains });
@@ -187,6 +203,7 @@ async function handleNewMessage(client, uid, label) {
 
 async function runAccountWorker(account) {
   const label = account.label || account.email;
+  const processedUids = new Set();
 
   while (true) {
     const client = new ImapFlow({
@@ -212,7 +229,7 @@ async function runAccountWorker(account) {
           try {
             const range = `${data.prevCount + 1}:${data.count}`;
             for await (const msg of client.fetch(range, { uid: true })) {
-              await handleNewMessage(client, msg.uid, label);
+              await handleNewMessage(client, msg.uid, label, processedUids);
             }
           } catch (err) {
             log(label, `Error saat handle pesan baru: ${err.message}`);
@@ -244,8 +261,10 @@ function validateConfig() {
     throw new Error('CONFIG.accounts kosong.');
   }
   for (const acc of CONFIG.accounts) {
-    if (!acc.email || !acc.appPassword || acc.appPassword.includes('xxxx')) {
-      throw new Error(`Akun "${acc.label || acc.email}" belum diisi dengan benar.`);
+    if (!acc.email || !acc.appPassword) {
+      throw new Error(
+        `Akun "${acc.label || acc.email}" belum diisi. Set env GMAIL_USER dan GMAIL_APP_PASSWORD.`
+      );
     }
   }
 }
