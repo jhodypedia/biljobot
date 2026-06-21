@@ -55,6 +55,10 @@ app.get('/logout', (req, res) => {
 // ==========================================
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Jumlah akun yang dicek secara paralel dalam 1 batch
+// Semakin besar = semakin cepat, tapi risiko rate limit lebih tinggi
+const CONCURRENCY_LIMIT = 5;
+
 async function checkAccount(account, maxRetries = 3) {
     const headers = {
         'User-Agent': account.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -89,6 +93,38 @@ async function checkAccount(account, maxRetries = 3) {
 }
 
 // ==========================================
+// FUNGSI BULK CHECK (PARALEL DENGAN BATCH)
+// ==========================================
+async function checkAccountsBulk(accounts) {
+    const results = [];
+    
+    for (let i = 0; i < accounts.length; i += CONCURRENCY_LIMIT) {
+        const batch = accounts.slice(i, i + CONCURRENCY_LIMIT);
+        const batchNumber = Math.floor(i / CONCURRENCY_LIMIT) + 1;
+        const totalBatches = Math.ceil(accounts.length / CONCURRENCY_LIMIT);
+        
+        console.log(`[PANSA GROUP BOT] 🚀 Batch ${batchNumber}/${totalBatches} — Mengecek ${batch.length} akun secara paralel...`);
+        
+        // Jalankan pengecekan paralel dalam batch ini
+        const batchPromises = batch.map((acc, idx) => {
+            const globalIndex = i + idx + 1;
+            console.log(`[PANSA GROUP BOT] ⏳ Cek ${globalIndex}/${accounts.length}: ${acc.accountName}`);
+            return checkAccount(acc);
+        });
+        
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+        
+        // Jeda singkat antar batch agar lebih aman
+        if (i + CONCURRENCY_LIMIT < accounts.length) {
+            await delay(1500);
+        }
+    }
+    
+    return results;
+}
+
+// ==========================================
 // BACKGROUND WORKER (BERJALAN DI BELAKANG LAYAR)
 // ==========================================
 async function startBackgroundWorker() {
@@ -99,20 +135,11 @@ async function startBackgroundWorker() {
             const accounts = JSON.parse(rawData);
             
             const results = [];
-            console.log(`\n[PANSA GROUP BOT] 🔄 Memulai putaran cek 188 akun...`);
+            console.log(`\n[PANSA GROUP BOT] 🔄 Memulai putaran cek ${accounts.length} akun (Bulk Mode - ${CONCURRENCY_LIMIT} paralel per batch)...`);
 
-            for (let i = 0; i < accounts.length; i++) {
-                const acc = accounts[i];
-                console.log(`[PANSA GROUP BOT] ⏳ Cek ${i + 1}/${accounts.length}: ${acc.accountName}`);
-                
-                const result = await checkAccount(acc);
-                results.push(result);
-                
-                // Jeda aman antar akun
-                if (i < accounts.length - 1) {
-                    await delay(Math.floor(Math.random() * 1500) + 1500);
-                }
-            }
+            // Gunakan bulk check paralel (bukan 1 per 1 lagi)
+            const bulkResults = await checkAccountsBulk(accounts);
+            results.push(...bulkResults);
             
             // Perbarui cache data untuk ditampilkan ke EJS
             CACHED_DASHBOARD = {
