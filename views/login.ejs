@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | PANSA GROUP</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background-color: #f8fafc; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        .login-card { background: #fff; width: 100%; max-width: 400px; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; text-align: center; }
+        .brand { font-size: 28px; font-weight: 900; color: #0f172a; margin-bottom: 5px; }
+        .brand span { color: #2563eb; }
+        .subtitle { color: #64748b; font-size: 14px; margin-bottom: 30px; }
+        .input-group { text-align: left; margin-bottom: 20px; }
+        .input-group label { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .input-group input { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #cbd5e1; font-size: 15px; outline: none; transition: 0.2s; }
+        .input-group input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        .btn-submit { background: #2563eb; color: #fff; border: none; width: 100%; padding: 14px; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .btn-submit:hover { background: #1d4ed8; }
+        .error-msg { background: #fee2e2; color: #b91c1c; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="brand"><i class="fa-solid fa-bolt"></i> PANSA <span>GROUP</span></div>
+        <p class="subtitle">Operational Analytics Dashboard</p>
+
+        <% if(error) { %>
+            <div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> <%= error %></div>
+        <% } %>
+
+        <form action="/login" method="POST">
+            <div class="input-group">
+                <label>System API Key</label>
+                <input type="password" name="apikey" placeholder="Masukkan Security Key..." required autofocus>
+            </div>
+            <button type="submit" class="btn-submit">Akses Dashboard</button>
+        </form>
+    </div>
+</body>
+</html>
