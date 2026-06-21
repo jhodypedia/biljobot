@@ -1,35 +1,29 @@
 {
-  "name": "billbot",
+  "name": "2captcha",
   "version": "1.0.0",
-  "description": "Auto register and complete task bills",
-  "keywords": [
-    "bot"
-  ],
-  "homepage": "https://github.com/jhodypedia/biljobot#readme",
-  "bugs": {
-    "url": "https://github.com/jhodypedia/biljobot/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/jhodypedia/biljobot.git"
-  },
-  "license": "ISC",
-  "author": "JhodyPedia",
-  "type": "module",
+  "description": "",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
   "dependencies": {
+    "2captcha": "^3.0.5-2",
     "axios": "^1.18.0",
     "axios-cookiejar-support": "^7.0.0",
+    "camoufox-js": "^0.11.1",
     "canvas": "^3.2.3",
     "cheerio": "^1.2.0",
-    "crypto": "^1.0.1",
     "dotenv": "^17.4.2",
-    "imapflow": "^1.4.1",
-    "mailparser": "^3.9.10",
-    "node-fetch": "^3.3.2",
-    "tough-cookie": "^6.0.1"
+    "ejs": "^6.0.1",
+    "express": "^5.2.1",
+    "https-proxy-agent": "^9.1.0",
+    "p-limit": "^7.3.0",
+    "tough-cookie": "^6.0.1",
+    "undici": "^8.5.0",
+    "user-agents": "^2.1.94"
   }
 }
