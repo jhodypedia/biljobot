@@ -15,7 +15,7 @@ const BASE_URL = 'https://bocapi.billsonchain.io';
 // ==========================================
 // KONFIGURASI KEAMANAN (Ubah sesuai selera)
 // ==========================================
-const SECRET_API_KEY = "PansaPro2026"; 
+const SECRET_API_KEY = "1111"; 
 
 // Middleware untuk memblokir akses jika tidak punya akses/cookie
 function requireAuth(req, res, next) {
